@@ -29,17 +29,28 @@ public class BasicStreams {
         final String outputTopic = streamsProps.getProperty("basic.output.topic");
 
         final String orderNumberStart = "orderNumber-";
-        // Using the StreamsBuilder from above, create a KStream with an input-topic
-        // and a Consumed instance with the correct
-        // Serdes for the key and value HINT: builder.stream and Serdes.String()
-        KStream<String, String> firstStream = null;
 
-        firstStream.peek((key, value) -> System.out.println("Incoming record - key " + key + " value " + value))
-                // filter records by making sure they contain the orderNumberStart variable from above HINT: use filter
-                // map the value to a new string by removing the orderNumberStart portion HINT: use mapValues
-                // only forward records where the value is 1000 or greater HINT: use filter and Long.parseLong
-                .peek((key, value) -> System.out.println("Outgoing record - key " + key + " value " + value));
-                // Write the results to an output topic defined above as outputTopic HINT: use "to" and Produced and Serdes.String()
+        // Create the KStream instance
+        KStream<String, String> firstStream = builder.stream(inputTopic, Consumed.with(Serdes.String(), Serdes.String()));
+
+        firstStream
+                // Print records as they come into the topology
+                .peek((key, value) -> System.out.println("Incoming record - key " + key + " value " + value))
+
+                // Add a filter to drop records where the value doesn't contain an order number string
+                .filter((key, value) -> value.contains(orderNumberStart))
+
+                // Add a mapValues operation to extract the number after the dash
+                .mapValues(value -> value.substring(value.indexOf("-") + 1))
+
+                // Add another filter to drop records where the value is not greater than 1000
+                .filter((key, value) -> Long.parseLong(value) > 1000)
+
+                // Add a peek method to display the transformed records
+                .peek((key, value) -> System.out.println("Outgoing record - key " + key + " value " + value))
+
+                // Add the to operator, the processor that writes records to a topic
+                .to(outputTopic, Produced.with(Serdes.String(), Serdes.String()));
 
         try (KafkaStreams kafkaStreams = new KafkaStreams(builder.build(), streamsProps)) {
             final CountDownLatch shutdownLatch = new CountDownLatch(1);
