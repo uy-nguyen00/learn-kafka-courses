@@ -79,27 +79,38 @@ public class StreamsJoin {
         KTable<String, User> userTable =
                 builder.table(tableInput, Materialized.with(Serdes.String(), userSerde));
 
-        KStream<String, CombinedOrder> combinedStream = null;
-        // create a Join between the applianceStream and the electronicStream
-        // using the ValueJoiner created above, orderJoiner gets you the correct value type of CombinedOrder
-        // You want to join records within 30 minutes of each other HINT: JoinWindows and Duration.ofMinutes
-        // Add the correct Serdes for the join state stores remember both sides have same key type
-        // HINT: StreamJoined and Serdes.String  and Serdes for the applianceStream and electronicStream created above
+        KStream<String, CombinedOrder> combinedStream = applianceStream
+                .join(
+                        electronicStream,
+                        orderJoiner,
 
-        // Optionally add this statement after the join to see the results on the console
-        // .peek((key, value) -> System.out.println("Stream-Stream Join record key " + key + " value " + value));
+                        // JoinWindows of 30 minutes (a right-side record must have timestamps within 30 minutes before or after
+                        // the timestamp of the left-side for a join result to occur
+                        JoinWindows.ofTimeDifferenceWithNoGrace(Duration.ofMinutes(30)),
 
+                        // Add the StreamJoined configuration with SerDes for the key, left-side, and right-side objects,
+                        // for the joined state stores
+                        StreamJoined.with(Serdes.String(), applianceSerde, electronicSerde)
+                )
+                .peek(
+                        (key, value) ->
+                                System.out.println("Stream-Stream Join record key " + key + " value " + value)
+                );
 
-        // Now join the combinedStream with the userTable,
-        // but you'll always want a result even if no corresponding entry is found in the table
-        // Using the ValueJoiner created above, enrichmentJoiner, return a CombinedOrder instance enriched with user information
-        // You'll need to add a Joined instance with the correct Serdes for the join state store
-
-        // Add these two statements after the join call to print results to the console and write results out
-        // to a topic
-
-        // .peek((key, value) -> System.out.println("Stream-Table Join record key " + key + " value " + value))
-        // .to(outputTopic, Produced.with(Serdes.String(), combinedSerde));
+        combinedStream
+                .leftJoin(
+                        // Adding the userTable as the right-side in the stream-table join
+                        userTable,
+                        // Add enrichmentJoiner to add user information, if available
+                        enrichmentJoiner,
+                        // Add the Joined object with SerDes for the values of both sides of the join
+                        Joined.with(Serdes.String(), combinedSerde, userSerde)
+                )
+                .peek(
+                        (key, value) ->
+                                System.out.println("Stream-Table joined record key " + key + " value " + value)
+                )
+                .to(outputTopic, Produced.with(Serdes.String(), combinedSerde));
 
         try (KafkaStreams kafkaStreams = new KafkaStreams(builder.build(), streamsProps)) {
             final CountDownLatch shutdownLatch = new CountDownLatch(1);
