@@ -9,3 +9,5 @@
 ./gradlew runStreams -Pargs=joins
 
 ./gradlew runStreams -Pargs=aggregate
+
+./gradlew runStreams -Pargs=windows

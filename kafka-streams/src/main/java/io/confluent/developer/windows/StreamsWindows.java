@@ -42,16 +42,28 @@ public class StreamsWindows {
                 builder.stream(inputTopic, Consumed.with(Serdes.String(), electronicSerde))
                         .peek((key, value) -> System.out.println("Incoming record - key " + key + " value " + value));
 
-        electronicStream.groupByKey()
+        electronicStream
+                .groupByKey()
+
+                // Add one-hour tumbling window with a grace period of five 5 minutes
+                .windowedBy(TimeWindows.ofSizeAndGrace(Duration.ofHours(1), Duration.ofMinutes(5)))
+
                 // Window the aggregation by the hour and allow for records to be up 5 minutes late
-                .aggregate(() -> 0.0,
+                .aggregate(
+                        () -> 0.0,
                         (key, order, total) -> total + order.getPrice(),
                         Materialized.with(Serdes.String(), Serdes.Double()))
-                // Don't emit results until the window closes HINT suppression
+
+                // Don't emit results until the window closes.
+                // This gives a single result for the windowed aggregation.
+                // The unbounded parameter means that the buffer will continue to consume memory as needed until the
+                // window closes.
+                .suppress(untilWindowCloses(unbounded()))
+
                 .toStream()
-                // When windowing Kafka Streams wraps the key in a Windowed class
-                // After converting the table to a stream it's a good idea to extract the
-                // Underlying key from the Windowed instance HINT: use map 
+
+                // map the windowed key to an underlying record key
+                .map((wk, value) -> KeyValue.pair(wk.key(), value))
                 .peek((key, value) -> System.out.println("Outgoing record - key " + key + " value " + value))
                 .to(outputTopic, Produced.with(Serdes.String(), Serdes.Double()));
 
